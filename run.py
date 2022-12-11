@@ -104,7 +104,7 @@ prev_iter = None
 
 # Train TEM on walks in different environment
 for i in range(i_start, params['train_it']):
-    
+    print(f"current_walk: {i}")
     # Get start time for function timing
     start_time = time.time()
     # Get updated parameters for this backprop iteration

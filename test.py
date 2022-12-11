@@ -22,9 +22,9 @@ np.random.seed(0)
 torch.manual_seed(0)
 
 # Choose which trained model to load
-date = '2020-10-19' # 2020-10-13 run 0 for successful node agent
+date = '2022-12-11' # 2020-10-13 run 0 for successful node agent
 run = '0'
-index = '32000'
+index = '4999'
 
 # Load the model: use import library to import module from specified path
 model_spec = importlib.util.spec_from_file_location("model", '../Summaries/' + date + '/run' + run + '/script/model.py')
@@ -107,12 +107,15 @@ plt.figure()
 ax = plt.subplot(1,2,1)
 plot.plot_map(environments[env_to_plot], np.array(to_acc[env_to_plot]), ax)
 ax.set_title('Accuracy to location')
+plt.show()
 ax = plt.subplot(1,2,2)
 plot.plot_map(environments[env_to_plot], np.array(from_acc[env_to_plot]), ax)
 ax.set_title('Accuracy from location')
+plt.show()
 
 # Plot occupation per location, then add walks on top
 ax = plot.plot_map(environments[env_to_plot], np.array(occupation[env_to_plot])/sum(occupation[env_to_plot])*environments[env_to_plot].n_locations, 
                    min_val=0, max_val=2, ax=None, shape='square', radius=1/np.sqrt(environments[env_to_plot].n_locations))
 ax = plot.plot_walk(environments[env_to_plot], walks[env_to_plot], ax=ax, n_steps=max(1, int(len(walks[env_to_plot])/500)))
 plt.title('Walk and average occupation')
+plt.show()
