@@ -195,8 +195,8 @@ for i in range(i_start, params['train_it']):
         logger.info('Finished backprop iter {:d} in {:.2f} seconds.'.format(i,time.time()-start_time))
         logger.info('Loss: {:.2f}. <p_g> {:.2f} <p_x> {:.2f} <x_gen> {:.2f} <x_g> {:.2f} <x_p> {:.2f} <g> {:.2f} <reg_g> {:.2f} <reg_p> {:.2f}'.format(loss.detach().cpu().numpy(), *plot_loss))
         logger.info('Accuracy: <p> {:.2f}% <g> {:.2f}% <gt> {:.2f}%'.format(acc_p, acc_g, acc_gt))
-        logger.info('Parameters: <max_hebb> {:.2f} <eta> {:.2f} <lambda> {:.2f} <p2g_scale_offset> {:.2f}'.format(np.max(np.abs(prev_iter[0].M[0].numpy())), tem.hyper['eta'], tem.hyper['lambda'], tem.hyper['p2g_scale_offset']))
-        logger.info('Weights:' + str([w for w in loss_weights.numpy()]))
+        logger.info('Parameters: <max_hebb> {:.2f} <eta> {:.2f} <lambda> {:.2f} <p2g_scale_offset> {:.2f}'.format(np.max(np.abs(prev_iter[0].M[0].cpu().numpy())), tem.hyper['eta'], tem.hyper['lambda'], tem.hyper['p2g_scale_offset']))
+        logger.info('Weights:' + str([w for w in loss_weights.cpu().numpy()]))
         logger.info(' ')
         # Also write progress to tensorboard, and all loss components. Order: [L_p_g, L_p_x, L_x_gen, L_x_g, L_x_p, L_g, L_reg_g, L_reg_p]
         writer.add_scalar('Losses/Total', loss.detach().cpu().numpy(), i)
