@@ -157,7 +157,7 @@ for i in range(i_start, params['train_it']):
     forward = tem(chunk, prev_iter)    
     
     # Accumulate loss from forward pass
-    loss = torch.tensor(0.0)
+    loss = torch.tensor(0.0, device=device)
     # Make vector for plotting losses
     plot_loss = 0
     # Collect all losses 
@@ -171,7 +171,7 @@ for i in range(i_start, params['train_it']):
             else:
                 env_visited[step.g[env_i]['id']] = True
         # Stack losses in this step along first dimension, then average across that dimension to get mean loss for this step
-        step_loss = torch.tensor(0) if not step_loss else torch.mean(torch.stack(step_loss, dim=0), dim=0)
+        step_loss = torch.tensor(0,device=device) if not step_loss else torch.mean(torch.stack(step_loss, dim=0), dim=0)
         # Save all separate components of loss for monitoring
         plot_loss = plot_loss + step_loss.detach().numpy()
         # And sum all components, then add them to total loss of this step
