@@ -130,7 +130,7 @@ def parameters():
     
     # ---- Memory parameters
     # Use common memory for generative and inference network
-    params['common_memory'] = False
+    params['common_memory'] = True #debug
     # Hebbian rate of forgetting
     params['lambda'] = 0.9999    
     # Hebbian rate of remembering

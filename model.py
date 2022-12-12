@@ -20,6 +20,8 @@ from scipy.stats import truncnorm
 # Custom modules
 import utils
 
+EPSILON = 0
+
 class Model(torch.nn.Module):
     def __init__(self, params):
         # First call super class init function to set up torch.nn.Module style model and inherit it's functionality
@@ -29,7 +31,7 @@ class Model(torch.nn.Module):
         # Create trainable parameters
         self.init_trainable()
     
-    def forward(self, walk, prev_iter = None, prev_M = None):
+    def forward(self, walk, prev_iter = None, prev_G = None, prev_X = None):
         # The previous iteration may contain walks without action. These are new walks, for which some parameters need to be reset.
         steps = self.init_walks(prev_iter)
         # Forward pass: perform a TEM iteration for each set of [place, observation, action], and produce inferred and generated variables for each step.
@@ -37,35 +39,53 @@ class Model(torch.nn.Module):
             # If there is no previous iteration at all: all walks are new, initialise a whole new iteration object
             if steps is None:
                 # Use an Iteration object to set initial values before any real iterations, initialising M, x_inf as zero. Set actions to None blank to indicate there was no previous action
-                steps = [self.init_iteration(g, x, [None for _ in range(len(a))], prev_M)]
+                steps = [self.init_iteration(g, x, [None for _ in range(len(a))], prev_G, prev_X)]
             # Perform TEM iteration using transition from previous iteration
-            L, M, g_gen, p_gen, x_gen, x_logits, x_inf, g_inf, p_inf = self.iteration(x, g, steps[-1].a, steps[-1].M, steps[-1].x_inf, steps[-1].g_inf)
+            L, G, X, g_gen, p_gen, x_gen, x_logits, x_inf, g_inf, p_inf = self.iteration(x, g, steps[-1].a, steps[-1].G, steps[-1].X, steps[-1].x_inf, steps[-1].g_inf)
             # Store this iteration in iteration object in steps list
-            steps.append(Iteration(g, x, a, L, M, g_gen, p_gen, x_gen, x_logits, x_inf, g_inf, p_inf))    
+            steps.append(Iteration(g, x, a, L, G, X, g_gen, p_gen, x_gen, x_logits, x_inf, g_inf, p_inf))    
         # The first step is either a step from a previous walk or initialisiation rubbish, so remove it
         steps = steps[1:]
         # Return steps, which is a list of Iteration objects
         return steps
 
-    def iteration(self, x, locations, a_prev, M_prev, x_prev, g_prev):
+    def already_visited(self, G, X, g_inf, x_inf):
+        for i in range(len(G)):
+            for j in range(len(G[i])):
+                if abs(torch.dot(G[i][j], g_inf[i])) < EPSILON and abs(torch.dot(X[i][j], x_inf[i])) < EPSILON:
+                    G[i][j] = g_inf[i]
+                    X[i][j] = x_inf[i]
+                    return True
+        return False
+
+    def iteration(self, x, locations, a_prev, G_prev, X_prev, x_prev, g_prev):
         # First, do the transition step, as it will be necessary for both the inference and generative part of the model
         gt_gen, gt_inf = self.gen_g(a_prev, g_prev, locations)        
         # Run inference model: infer grounded location p_inf (hippocampus), abstract location g_inf (entorhinal). Also keep filtered sensory observation (x_inf), and retrieved grounded location p_inf_x
-        x_inf, g_inf, p_inf_x, p_inf = self.inference(x, locations, M_prev, x_prev, gt_inf)                        
+        x_inf, g_inf, p_inf = self.inference(x, locations, G_prev, X_prev, x_prev, gt_inf)                        
         # Run generative model: since generative model is only used for training purposes, it will generate from *inferred* variables instead of *generated* variables (as it would when used for generation)
-        x_gen, x_logits, p_gen = self.generative(M_prev, p_inf, g_inf, gt_gen)
+        x_gen, x_logits, p_gen = self.generative(G_prev, X_prev, p_inf, g_inf, gt_gen)
         # Update generative memory with generated and inferred grounded location. 
-        M = [self.hebbian(M_prev[0], torch.cat(p_inf,dim=1), torch.cat(p_gen,dim=1))]
+        #G = [self.hebbian(G_prev[0], torch.cat(g_inf,dim=1), torch.cat(p_gen,dim=1))]
+        #X = [self.hebbian(X_prev[0], torch.cat(x_inf,dim=1), torch.cat(x_gen,dim=1))]
+        g_ = torch.cat(self.g2g_(g_inf), dim=1)
+        x_ = torch.cat(self.x2x_(x_inf), dim=1)
+        print(g_.size(), G_prev[0].size())
+        if not self.already_visited(G_prev[0], X_prev[0], g_, x_):
+            G, X = [torch.cat((G_prev[0],torch.unsqueeze(g_,1)), dim=1)], [torch.cat((X_prev[0],torch.unsqueeze(x_,1)), dim=1)]
+        else:
+            G, X = [G_prev[0]], [X_prev[0]]
         # If using memory for grounded location inference: append inference memory
         if self.hyper['use_p_inf']:
             # Inference memory is identical to generative memory if using common memory, and updated separatedly if not            
-            M.append(M[0] if self.hyper['common_memory'] else self.hebbian(M_prev[1], torch.cat(p_inf,dim=1), torch.cat(p_inf_x,dim=1), do_hierarchical_connections=False))
+            G.append(G[0] if self.hyper['common_memory'] else self.hebbian(G_prev[1], torch.cat(p_inf,dim=1), torch.cat(p_inf_x,dim=1), do_hierarchical_connections=False))
+            X.append(X[0] if self.hyper['common_memory'] else self.hebbian(X_prev[1], torch.cat(p_inf,dim=1), torch.cat(p_inf_x,dim=1), do_hierarchical_connections=False))
         # Calculate loss of this step
-        L = self.loss(gt_gen, p_gen, x_logits, x, g_inf, p_inf, p_inf_x, M_prev)
+        L = self.loss(gt_gen, p_gen, x_logits, x, g_inf, p_inf, p_inf_x, G_prev, X_prev)
         # Return all iteration values
-        return L, M, gt_gen, p_gen, x_gen, x_logits, x_inf, g_inf, p_inf
+        return L, G, X, gt_gen, p_gen, x_gen, x_logits, x_inf, g_inf, p_inf
         
-    def inference(self, x, locations, M_prev, x_prev, g_gen):
+    def inference(self, x, locations, G_prev, X_prev, x_prev, g_gen):
         # Compress sensory observation from one-hot to two-hot (or alternatively, whatever an MLP makes of it)
         x_c = self.f_c(x)
         # Temporally filter sensory observation by mixing it with previous experience 
@@ -73,31 +93,31 @@ class Model(torch.nn.Module):
         # Prepare sensory experience for input to memory by normalisation and weighting
         x_ = self.x2x_(x_f)
         # Retrieve grounded location from memory by doing pattern completion on current sensory experience
-        p_x = self.attractor(x_, M_prev[1], retrieve_it_mask=self.hyper['p_retrieve_mask_inf']) if self.hyper['use_p_inf'] else None
+        g = self.attractor(x_, G_prev[1], X_prev[1], True, retrieve_it_mask=self.hyper['p_retrieve_mask_inf']) if self.hyper['use_p_inf'] else None
         # Infer abstract location by combining previous abstract location and grounded location retrieved from memory by current sensory experience
-        g = self.inf_g(p_x, g_gen, x, locations)
+        #g = self.inf_g(p_x, g_gen, x, locations)
         # Prepare abstract location for input to memory by downsampling and weighting
         g_ = self.g2g_(g)
         # Infer grounded location from sensory experience and inferred abstract location
         p = self.inf_p(x_, g_)
         # Return variables in order that they were created
-        return x_f, g, p_x, p    
+        return x_f, g, p    
 
-    def generative(self, M_prev, p_inf, g_inf, g_gen):
+    def generative(self, G_prev, X_prev, p_inf, g_inf, g_gen):
         # Generate observation from inferred grounded location, using only the highest frequency. Also keep non-softmaxed logits which are used in the loss later
         x_p, x_p_logits = self.gen_x(p_inf[0])
         # Retrieve grounded location from memory by pattern completion on inferred abstract location
-        p_g_inf = self.gen_p(g_inf, M_prev[0]) # was p_mem_gen
+        p_g_inf = self.gen_p(g_inf, G_prev[0], X_prev[0]) # was p_mem_gen
         # And generate observation from the grounded location retrieved from inferred abstract location
         x_g, x_g_logits = self.gen_x(p_g_inf[0])
         # Retreive grounded location from memory by pattern completion on abstract location by transitioning
-        p_g_gen = self.gen_p(g_gen, M_prev[0])
+        p_g_gen = self.gen_p(g_gen, G_prev[0], X_prev[0])
         # Generate observation from sampled grounded location
         x_gt, x_gt_logits = self.gen_x(p_g_gen[0])
         # Return all generated observations and their corresponding logits
         return (x_p, x_g, x_gt), (x_p_logits, x_g_logits, x_gt_logits), p_g_inf
 
-    def loss(self, g_gen, p_gen, x_logits, x, g_inf, p_inf, p_inf_x, M_prev):
+    def loss(self, g_gen, p_gen, x_logits, x, g_inf, p_inf, p_inf_x, G_prev, X_prev):
         # Calculate loss function, separately for each component because you might want to reweight contributions later                
         # L_p_gen is squared error loss between inferred grounded location and grounded location retrieved from inferred abstract location
         L_p_g = torch.sum(torch.stack(utils.squared_error(p_inf, p_gen), dim=0), dim=0)
@@ -165,23 +185,25 @@ class Model(torch.nn.Module):
         # MLP for decompressing highest frequency sensory experience to sensory observation
         self.MLP_c_star = MLP(self.hyper['n_x_f'][0], self.hyper['n_x'], hidden_dim=20 * self.hyper['n_x_c'])
     
-    def init_iteration(self, g, x, a, M):
+    def init_iteration(self, g, x, a, G, X):
         # On the very first iteration, update the batch size based on the data. This is useful when doing analysis on the network with different batch sizes compared to training
         self.hyper['batch_size'] = x.shape[0]
         # Initalise hebbian memory connectivity matrix [M_gen, M_inf] if it wasn't initialised yet
-        if M is None:
+        if G is None:
             # Create new empty memory dict for generative network: zero connectivity matrix M_0, then empty list of the memory vectors a and b for each iteration for efficient hebbian memory computation
-            M = [torch.zeros((self.hyper['batch_size'],sum(self.hyper['n_p']),sum(self.hyper['n_p'])), dtype=torch.float)]
+            G = [torch.zeros((self.hyper['batch_size'],1,sum(self.hyper['n_p'])), dtype=torch.float)]
+            X = [torch.zeros((self.hyper['batch_size'],1,sum(self.hyper['n_p'])), dtype=torch.float)]
             # Append inference memory only if memory is used in grounded location inference
             if self.hyper['use_p_inf']:
                 # If inference and generative network share common memory: reuse same connectivity, and same memory vectors. Else, create a new empty memory list for inference network
-                M.append(M[0] if self.hyper['common_memory'] else torch.zeros((self.hyper['batch_size'],sum(self.hyper['n_p']),sum(self.hyper['n_p'])), dtype=torch.float)) 
+                G.append(G[0] if self.hyper['common_memory'] else torch.zeros((self.hyper['batch_size'],1,sum(self.hyper['n_p'])), dtype=torch.float))
+                X.append(X[0] if self.hyper['common_memory'] else torch.zeros((self.hyper['batch_size'],1,sum(self.hyper['n_p'])), dtype=torch.float))  
         # Initialise previous abstract location by stacking abstract location prior
         g_inf = [torch.stack([self.g_init[f] for _ in range(self.hyper['batch_size'])]) for f in range(self.hyper['n_f'])]
         # Initialise previous sensory experience with zeros, as there is no data yet for temporal smoothing
         x_inf = [torch.zeros((self.hyper['batch_size'], self.hyper['n_x_f'][f])) for f in range(self.hyper['n_f'])]        
         # And construct new iteration for that g, x, a, and M
-        return Iteration(g=g, x=x, a=a, M=M, x_inf=x_inf, g_inf=g_inf)    
+        return Iteration(g=g, x=x, a=a, G=G, X=X, x_inf=x_inf, g_inf=g_inf)    
     
     def init_walks(self, prev_iter):
         # Only reset parameters for previous iteration if a previous iteration was actually provided - if it wasn't, all parameters will be reset when creating a fresh Iteration object in init_iteration
@@ -215,11 +237,11 @@ class Model(torch.nn.Module):
         # Return generated abstract location after transition
         return g_gen, (g, sigma_g)
     
-    def gen_p(self, g, M_prev):
+    def gen_p(self, g, G_prev, X_prev):
         # We want to use g as an index for memory retrieval, but it doesn't have the right dimensions (these are grid cells, we need place cells). We need g_ instead
         g_ = self.g2g_(g)
         # Retreive memory: do pattern completion on abstract location to get grounded location    
-        mu_p = self.attractor(g_, M_prev, retrieve_it_mask=self.hyper['p_retrieve_mask_gen'])
+        mu_p = self.attractor(g_, G_prev, X_prev, False, retrieve_it_mask=self.hyper['p_retrieve_mask_gen'])
         sigma_p = self.f_sigma_p(mu_p)
         # Either sample new grounded location p or simply take the mean of distribution in noiseless case
         p = [mu_p[f] + sigma_p[f] * np.random.randn() if self.hyper['do_sample'] else mu_p[f] for f in range(self.hyper['n_f'])]
@@ -445,19 +467,25 @@ class Model(torch.nn.Module):
         activation = [utils.leaky_relu(torch.clamp(p_f, min=-1, max=1)) for p_f in p] if type(p) is list else utils.leaky_relu(torch.clamp(p, min=-1, max=1)) 
         return activation        
     
-    def attractor(self, p_query, M, retrieve_it_mask=None):        
+    def attractor(self, query, G, X, dk = 0, is_x = False, retrieve_it_mask=None):        
         # Retreive grounded location from attractor network memory with weights M by pattern-completing query    
         # For example, initial attractor input can come from abstract location (g_) or sensory experience (x_)                        
         # Start by flattening query grounded locations across frequency modules
-        h_t = torch.cat(p_query, dim=1)
+        h_t = torch.cat(query, dim=1)
         # Apply activation function to initial memory index
         h_t = self.f_p(h_t)        
         # Hierarchical retrieval (not in paper) is implemented by early stopping retrieval for low frequencies, using a mask. If not specified: initialise mask as all 1s
         retrieve_it_mask = [torch.ones(sum(self.hyper['n_p'])) for _ in range(self.hyper['n_p'])] if retrieve_it_mask is None else retrieve_it_mask
         # Iterate attractor dynamics to do pattern completion
+        if not dk:
+            dk = len(G) #sum(self.hyper['n_p'])
         for tau in range(self.hyper['i_attractor']):
+            if is_x:
+                h_t = torch.squeeze(torch.matmul(torch.unsqueeze(torch.unsqueeze(self.f_p(torch.squeeze(torch.matmul(torch.unsqueeze(h_t,1), torch.transpose(G,1,2)))/np.sqrt(dk)),1),1),X))
+            else:
+                h_t = torch.squeeze(torch.matmul(torch.unsqueeze(torch.unsqueeze(self.f_p(torch.squeeze(torch.matmul(torch.unsqueeze(h_t,1), torch.transpose(X,1,2)))/np.sqrt(dk)),1),1),G))
             # Apply one iteration of attractor dynamics, but only where there is a 1 in the mask. NB retrieve_it_mask entries have only one row, but are broadcasted to batch_size
-            h_t = (1-retrieve_it_mask[tau])*h_t + retrieve_it_mask[tau]*(self.f_p(self.hyper['kappa'] * h_t + torch.squeeze(torch.matmul(torch.unsqueeze(h_t,1), M))))
+            #h_t = (1-retrieve_it_mask[tau])*h_t + retrieve_it_mask[tau]*(self.f_p(self.hyper['kappa'] * h_t + torch.squeeze(torch.matmul(torch.unsqueeze(h_t,1), M))))
         # Make helper list of cumulative neurons per frequency module for grounded locations
         n_p = np.cumsum(np.concatenate(([0],self.hyper['n_p'])))                
         # Now re-cast the grounded location into different frequency modules, since memory retrieval turned it into one long vector
@@ -592,13 +620,14 @@ class LSTM(torch.nn.Module):
         return data  
 
 class Iteration:
-    def __init__(self, g = None, x = None, a = None, L = None, M = None, g_gen = None, p_gen = None, x_gen = None, x_logits = None, x_inf = None, g_inf = None, p_inf = None):
+    def __init__(self, g = None, x = None, a = None, L = None, G = None, X = None, g_gen = None, p_gen = None, x_gen = None, x_logits = None, x_inf = None, g_inf = None, p_inf = None):
         # Copy all inputs
         self.g = g
         self.x = x
         self.a = a
         self.L = L
-        self.M = M
+        self.G = G
+        self.X = X
         self.g_gen = g_gen
         self.p_gen = p_gen
         self.x_gen = x_gen
@@ -618,7 +647,8 @@ class Iteration:
     def detach(self):
         # Detach all tensors contained in this iteration
         self.L = [tensor.detach() for tensor in self.L]
-        self.M = [tensor.detach() for tensor in self.M]
+        self.G = [tensor.detach() for tensor in self.G]
+        self.X = [tensor.detach() for tensor in self.X]
         self.g_gen = [tensor.detach() for tensor in self.g_gen]
         self.p_gen = [tensor.detach() for tensor in self.p_gen]
         self.x_gen = [tensor.detach() for tensor in self.x_gen]
