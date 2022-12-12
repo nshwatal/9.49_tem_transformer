@@ -17,14 +17,15 @@ import world
 import analyse
 import plot
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 # Set random seeds for reproducibility
 np.random.seed(0)
 torch.manual_seed(0)
 
 # Choose which trained model to load
-date = '2022-12-11' # 2020-10-13 run 0 for successful node agent
-run = '0'
-index = '4999'
+date = '2022-12-12' # 2020-10-13 run 0 for successful node agent
+run = '11'
+index = '6000'
 
 # Load the model: use import library to import module from specified path
 model_spec = importlib.util.spec_from_file_location("model", '../Summaries/' + date + '/run' + run + '/script/model.py')
@@ -32,11 +33,11 @@ model = importlib.util.module_from_spec(model_spec)
 model_spec.loader.exec_module(model)
 
 # Load the parameters of the model
-params = torch.load('../Summaries/' + date + '/run' + run + '/model/params_' + index + '.pt')
+params = torch.load('../Summaries/' + date + '/run' + run + '/model/params_' + index + '.pt',map_location=torch.device(device))
 # Create a new tem model with the loaded parameters
 tem = model.Model(params)
 # Load the model weights after training
-model_weights = torch.load('../Summaries/' + date + '/run' + run + '/model/tem_' + index + '.pt')
+model_weights = torch.load('../Summaries/' + date + '/run' + run + '/model/tem_' + index + '.pt',map_location=torch.device(device))
 # Set the model weights to the loaded trained model weights
 tem.load_state_dict(model_weights)
 # Make sure model is in evaluate mode (not crucial because it doesn't currently use dropout or batchnorm layers)
