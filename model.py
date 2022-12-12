@@ -610,8 +610,8 @@ class Iteration:
 
     def correct(self):
         # Detach observation and all predictions
-        observation = self.x.detach().numpy()
-        predictions = [tensor.detach().numpy() for tensor in self.x_gen]
+        observation = self.x.detach().cpu().numpy()
+        predictions = [tensor.detach().cpu().numpy() for tensor in self.x_gen]
         # Did the model predict the right observation in this iteration?
         accuracy = [np.argmax(prediction, axis=-1) == np.argmax(observation, axis=-1) for prediction in predictions]
         return accuracy

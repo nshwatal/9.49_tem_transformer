@@ -173,7 +173,7 @@ for i in range(i_start, params['train_it']):
         # Stack losses in this step along first dimension, then average across that dimension to get mean loss for this step
         step_loss = torch.tensor(0,device=device) if not step_loss else torch.mean(torch.stack(step_loss, dim=0), dim=0)
         # Save all separate components of loss for monitoring
-        plot_loss = plot_loss + step_loss.detach().numpy()
+        plot_loss = plot_loss + step_loss.detach().cpu().numpy()
         # And sum all components, then add them to total loss of this step
         loss = loss + torch.sum(step_loss)
 
@@ -199,7 +199,7 @@ for i in range(i_start, params['train_it']):
         logger.info('Weights:' + str([w for w in loss_weights.numpy()]))
         logger.info(' ')
         # Also write progress to tensorboard, and all loss components. Order: [L_p_g, L_p_x, L_x_gen, L_x_g, L_x_p, L_g, L_reg_g, L_reg_p]
-        writer.add_scalar('Losses/Total', loss.detach().numpy(), i)
+        writer.add_scalar('Losses/Total', loss.detach().cpu().numpy(), i)
         writer.add_scalar('Losses/p_g', plot_loss[0], i)
         writer.add_scalar('Losses/p_x', plot_loss[1], i)
         writer.add_scalar('Losses/x_gen', plot_loss[2], i)
