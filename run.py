@@ -52,7 +52,6 @@ if load_existing_model:
     
     # Create a new tem model with the loaded parameters
     tem = model.Model(params)
-    tem = tem.to(device)
     # Load the model weights after training
     model_weights = torch.load(model_path + '/tem_' + str(i_start) + '.pt')
     # Set the model weights to the loaded trained model weights
@@ -82,7 +81,6 @@ else:
     
     # And create instance of TEM with those parameters
     tem = model.Model(params)
-    tem = tem.to(device)
     # Create list of environments that we will sample from during training to provide TEM with trajectory input
     envs = ['./envs/5x5.json']
     # Save all environment files that are being used in training in the script directory
