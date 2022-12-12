@@ -11,6 +11,7 @@ import torch
 import copy
 from scipy.sparse.csgraph import shortest_path
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 # Functions for generating data that TEM trains on: sequences of [state,observation,action] tuples
 
 class World:
@@ -228,7 +229,7 @@ class World:
         # Find sensory observation for new state, and store it as one-hot vector
         new_observation = np.eye(self.n_observations)[new_location['observation']]
         # Create a new observation by converting the new observation to a torch tensor
-        new_observation = torch.tensor(new_observation, dtype=torch.float).view((new_observation.shape[0]))
+        new_observation = torch.tensor(new_observation, dtype=torch.float, device=device).view((new_observation.shape[0]))
         # Return the new observation
         return new_observation
         
