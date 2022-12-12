@@ -36,6 +36,7 @@ model_spec.loader.exec_module(model)
 params = torch.load('../Summaries/' + date + '/run' + run + '/model/params_' + index + '.pt',map_location=torch.device(device))
 # Create a new tem model with the loaded parameters
 tem = model.Model(params)
+tem = tem.to(device)
 # Load the model weights after training
 model_weights = torch.load('../Summaries/' + date + '/run' + run + '/model/tem_' + index + '.pt',map_location=torch.device(device))
 # Set the model weights to the loaded trained model weights
