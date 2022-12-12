@@ -37,7 +37,7 @@ def parameters():
       
     # -- Traning parameters
     # Number of walks to generate
-    params['train_it'] = 5000
+    params['train_it'] = 20000
     # Number of steps to roll out before backpropagation through time
     params['n_rollout'] = 20
     # Batch size: number of walks for training simultaneously
