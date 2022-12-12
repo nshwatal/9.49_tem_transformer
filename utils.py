@@ -12,6 +12,8 @@ import os
 import datetime
 import logging
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 def inv_var_weight(mus, sigmas):
     '''
     Accepts lists batches of row vectors of means and standard deviations, with batches along dim 0
@@ -94,10 +96,10 @@ def downsample(value, target_dim):
     # Set places to break up input vector into chunks
     edges = np.append(np.round(np.arange(0, value_dim, float(value_dim) / target_dim)),value_dim).astype(int)
     # Create downsampling matrix
-    downsample = torch.zeros((value_dim,target_dim), dtype = torch.float)
+    downsample = torch.zeros((value_dim,target_dim), dtype = torch.float, device = device)
     # Fill downsampling matrix with chunks
     for curr_entry in range(target_dim):
-        downsample[edges[curr_entry]:edges[curr_entry+1],curr_entry] = torch.tensor(1.0/(edges[curr_entry+1]-edges[curr_entry]), dtype=torch.float)
+        downsample[edges[curr_entry]:edges[curr_entry+1],curr_entry] = torch.tensor(1.0/(edges[curr_entry+1]-edges[curr_entry]), dtype=torch.float, device=device)
     # Do downsampling by matrix multiplication
     return torch.matmul(value,downsample)
 

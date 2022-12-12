@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import pdb
 import copy
-
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 # Track prediction accuracy over walk, and calculate fraction of locations visited and actions taken to assess performance
 def performance(forward, model, environments):
     # Keep track of whether model prediction were correct, as well as the fraction of nodes/edges visited, across environments
