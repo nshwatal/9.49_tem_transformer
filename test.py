@@ -23,9 +23,9 @@ np.random.seed(0)
 torch.manual_seed(0)
 
 # Choose which trained model to load
-date = '2022-12-12' # 2020-10-13 run 0 for successful node agent
-run = '11'
-index = '6000'
+date = '2022-12-11' # 2020-10-13 run 0 for successful node agent
+run = '0'
+index = '4999'
 
 # Load the model: use import library to import module from specified path
 model_spec = importlib.util.spec_from_file_location("model", '../Summaries/' + date + '/run' + run + '/script/model.py')
