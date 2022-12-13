@@ -17,14 +17,15 @@ import world
 import analyse
 import plot
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 # Set random seeds for reproducibility
 np.random.seed(0)
 torch.manual_seed(0)
 
 # Choose which trained model to load
-date = '2020-10-19' # 2020-10-13 run 0 for successful node agent
-run = '0'
-index = '32000'
+date = '2022-12-12' # 2020-10-13 run 0 for successful node agent
+run = '11'
+index = '6000'
 
 # Load the model: use import library to import module from specified path
 model_spec = importlib.util.spec_from_file_location("model", '../Summaries/' + date + '/run' + run + '/script/model.py')
@@ -32,11 +33,12 @@ model = importlib.util.module_from_spec(model_spec)
 model_spec.loader.exec_module(model)
 
 # Load the parameters of the model
-params = torch.load('../Summaries/' + date + '/run' + run + '/model/params_' + index + '.pt')
+params = torch.load('../Summaries/' + date + '/run' + run + '/model/params_' + index + '.pt',map_location=torch.device(device))
 # Create a new tem model with the loaded parameters
 tem = model.Model(params)
+tem = tem.to(device)
 # Load the model weights after training
-model_weights = torch.load('../Summaries/' + date + '/run' + run + '/model/tem_' + index + '.pt')
+model_weights = torch.load('../Summaries/' + date + '/run' + run + '/model/tem_' + index + '.pt',map_location=torch.device(device))
 # Set the model weights to the loaded trained model weights
 tem.load_state_dict(model_weights)
 # Make sure model is in evaluate mode (not crucial because it doesn't currently use dropout or batchnorm layers)
@@ -97,7 +99,7 @@ plt.plot(analyse.smooth(np.mean(np.array([env for env_i, env in enumerate(correc
 plt.ylim(0, 1)
 plt.legend()
 plt.title('Zero-shot inference: ' + str(np.mean([np.mean(env) for env_i, env in enumerate(zero_shot) if envs_to_avg[env_i]]) * 100) + '%')
-plt.show()
+
 
 # Plot rate maps for all cells
 plot.plot_cells(p[env_to_plot], g[env_to_plot], environments[env_to_plot], n_f_ovc=(params['n_f_ovc'] if 'n_f_ovc' in params else 0), columns = 25)
@@ -107,9 +109,11 @@ plt.figure()
 ax = plt.subplot(1,2,1)
 plot.plot_map(environments[env_to_plot], np.array(to_acc[env_to_plot]), ax)
 ax.set_title('Accuracy to location')
+
 ax = plt.subplot(1,2,2)
 plot.plot_map(environments[env_to_plot], np.array(from_acc[env_to_plot]), ax)
 ax.set_title('Accuracy from location')
+
 
 # Plot occupation per location, then add walks on top
 ax = plot.plot_map(environments[env_to_plot], np.array(occupation[env_to_plot])/sum(occupation[env_to_plot])*environments[env_to_plot].n_locations, 

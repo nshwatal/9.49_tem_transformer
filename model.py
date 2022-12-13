@@ -19,6 +19,7 @@ import copy
 from scipy.stats import truncnorm
 # Custom modules
 import utils
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class Model(torch.nn.Module):
     def __init__(self, params):
@@ -102,7 +103,7 @@ class Model(torch.nn.Module):
         # L_p_gen is squared error loss between inferred grounded location and grounded location retrieved from inferred abstract location
         L_p_g = torch.sum(torch.stack(utils.squared_error(p_inf, p_gen), dim=0), dim=0)
         # L_p_inf is squared error loss between inferred grounded location and grounded location retrieved from sensory experience
-        L_p_x = torch.sum(torch.stack(utils.squared_error(p_inf, p_inf_x), dim=0), dim=0) if self.hyper['use_p_inf'] else torch.zeros_like(L_p_g)
+        L_p_x = torch.sum(torch.stack(utils.squared_error(p_inf, p_inf_x), dim=0), dim=0) if self.hyper['use_p_inf'] else torch.zeros_like(L_p_g,device=device)
         # L_g is squared error loss between generated abstract location and inferred abstract location
         L_g = torch.sum(torch.stack(utils.squared_error(g_inf, g_gen), dim=0), dim=0)         
         # L_x is a cross-entropy loss between sensory experience and different model predictions. First get true labels from sensory experience
@@ -123,17 +124,17 @@ class Model(torch.nn.Module):
 
     def init_trainable(self):
         # Scale factor in Laplacian transform for each frequency module. High frequency comes first, low frequency comes last. Learn inverse sigmoid instead of scale factor directly, so domain of alpha is -inf, inf
-        self.alpha = torch.nn.ParameterList([torch.nn.Parameter(torch.tensor(np.log(self.hyper['f_initial'][f] / (1 - self.hyper['f_initial'][f])), dtype=torch.float)) for f in range(self.hyper['n_f'])])
+        self.alpha = torch.nn.ParameterList([torch.nn.Parameter(torch.tensor(np.log(self.hyper['f_initial'][f] / (1 - self.hyper['f_initial'][f])), dtype=torch.float, device=device)) for f in range(self.hyper['n_f'])])
         # Entorhinal preference weights
-        self.w_x = torch.nn.Parameter(torch.tensor(1.0))
+        self.w_x = torch.nn.Parameter(torch.tensor(1.0,device=device))
         # Entorhinal preference bias
-        self.b_x = torch.nn.Parameter(torch.zeros(self.hyper['n_x_c']))
+        self.b_x = torch.nn.Parameter(torch.zeros(self.hyper['n_x_c'],device=device))
         # Frequency module specific scaling of sensory experience before input to hippocampus
-        self.w_p = torch.nn.ParameterList([torch.nn.Parameter(torch.tensor(1.0)) for f in range(self.hyper['n_f'])])        
+        self.w_p = torch.nn.ParameterList([torch.nn.Parameter(torch.tensor(1.0,device=device)) for f in range(self.hyper['n_f'])])        
         # Initial activity of abstract location cells when entering a new environment, like a prior on g. Initialise with truncated normal
-        self.g_init = torch.nn.ParameterList([torch.nn.Parameter(torch.tensor(truncnorm.rvs(-2, 2, size=self.hyper['n_g'][f], loc=0, scale=self.hyper['g_init_std']), dtype=torch.float)) for f in range(self.hyper['n_f'])])
+        self.g_init = torch.nn.ParameterList([torch.nn.Parameter(torch.tensor(truncnorm.rvs(-2, 2, size=self.hyper['n_g'][f], loc=0, scale=self.hyper['g_init_std']), dtype=torch.float,device=device)) for f in range(self.hyper['n_f'])])
         # Log of standard deviation of abstract location cells when entering a new environment; standard deviation of the prior on g. Initialise with truncated normal
-        self.logsig_g_init = torch.nn.ParameterList([torch.nn.Parameter(torch.tensor(truncnorm.rvs(-2, 2, size=self.hyper['n_g'][f], loc=0, scale=self.hyper['g_init_std']), dtype=torch.float)) for f in range(self.hyper['n_f'])])                
+        self.logsig_g_init = torch.nn.ParameterList([torch.nn.Parameter(torch.tensor(truncnorm.rvs(-2, 2, size=self.hyper['n_g'][f], loc=0, scale=self.hyper['g_init_std']), dtype=torch.float, device=device)) for f in range(self.hyper['n_f'])])                
         # MLP for transition weights (not in paper, but recommended by James so you can learn about similarities between actions). Size is given by grid connections
         self.MLP_D_a = MLP([self.hyper['n_actions'] for _ in range(self.hyper['n_f'])],
                             [sum([self.hyper['n_g'][f_from] for f_from in range(self.hyper['n_f']) if self.hyper['g_connections'][f_to][f_from]])*self.hyper['n_g'][f_to] for f_to in range(self.hyper['n_f'])],
@@ -143,7 +144,7 @@ class Model(torch.nn.Module):
         # Initialise the hidden to output weights as zero, so initially you simply keep the current abstract location to predict the next abstract location
         self.MLP_D_a.set_weights(1, 0.0)
         # Transition weights without specifying an action for use in generative model with shiny objects
-        self.D_no_a = torch.nn.ParameterList([torch.nn.Parameter(torch.zeros(sum([self.hyper['n_g'][f_from] for f_from in range(self.hyper['n_f']) if self.hyper['g_connections'][f_to][f_from]])*self.hyper['n_g'][f_to])) for f_to in range(self.hyper['n_f'])])
+        self.D_no_a = torch.nn.ParameterList([torch.nn.Parameter(torch.zeros(sum([self.hyper['n_g'][f_from] for f_from in range(self.hyper['n_f']) if self.hyper['g_connections'][f_to][f_from]])*self.hyper['n_g'][f_to], device=device)) for f_to in range(self.hyper['n_f'])])
         # MLP for standard deviation of transition sample
         self.MLP_sigma_g_path = MLP(self.hyper['n_g'], self.hyper['n_g'], activation=[torch.tanh, torch.exp], hidden_dim=[2 * g for g in self.hyper['n_g']])
         # MLP for standard devation of grounded location from retrieved memory sample        
@@ -151,7 +152,7 @@ class Model(torch.nn.Module):
         # MLP to generate mean of abstract location from downsampled abstract location, obtained by summing grounded location over sensory preferences in inference model
         self.MLP_mu_g_mem = MLP(self.hyper['n_g_subsampled'], self.hyper['n_g'], hidden_dim=[2 * g for g in self.hyper['n_g']])
         # Initialise weights in last layer of MLP_mu_g_mem as truncated normal for each frequency module
-        self.MLP_mu_g_mem.set_weights(-1, [torch.tensor(truncnorm.rvs(-2, 2, size=list(self.MLP_mu_g_mem.w[f][-1].weight.shape), loc=0, scale=self.hyper['g_mem_std']), dtype=torch.float) for f in range(self.hyper['n_f'])])
+        self.MLP_mu_g_mem.set_weights(-1, [torch.tensor(truncnorm.rvs(-2, 2, size=list(self.MLP_mu_g_mem.w[f][-1].weight.shape), loc=0, scale=self.hyper['g_mem_std']), dtype=torch.float,device=device) for f in range(self.hyper['n_f'])])
         # MLP to generate standard deviation of abstract location from two measures (generated observation error and inferred abstract location vector norm) of memory quality
         self.MLP_sigma_g_mem = MLP([2 for _ in self.hyper['n_g_subsampled']], self.hyper['n_g'], activation=[torch.tanh, torch.exp], hidden_dim=[2 * g for g in self.hyper['n_g']])
         # MLP to generate mean of abstract location directly from shiny object presence. Outputs to object vector cell modules if they're separated, else to all abstract location modules
@@ -171,15 +172,15 @@ class Model(torch.nn.Module):
         # Initalise hebbian memory connectivity matrix [M_gen, M_inf] if it wasn't initialised yet
         if M is None:
             # Create new empty memory dict for generative network: zero connectivity matrix M_0, then empty list of the memory vectors a and b for each iteration for efficient hebbian memory computation
-            M = [torch.zeros((self.hyper['batch_size'],sum(self.hyper['n_p']),sum(self.hyper['n_p'])), dtype=torch.float)]
+            M = [torch.zeros((self.hyper['batch_size'],sum(self.hyper['n_p']),sum(self.hyper['n_p'])), dtype=torch.float,device=device)]
             # Append inference memory only if memory is used in grounded location inference
             if self.hyper['use_p_inf']:
                 # If inference and generative network share common memory: reuse same connectivity, and same memory vectors. Else, create a new empty memory list for inference network
-                M.append(M[0] if self.hyper['common_memory'] else torch.zeros((self.hyper['batch_size'],sum(self.hyper['n_p']),sum(self.hyper['n_p'])), dtype=torch.float)) 
+                M.append(M[0] if self.hyper['common_memory'] else torch.zeros((self.hyper['batch_size'],sum(self.hyper['n_p']),sum(self.hyper['n_p'])), dtype=torch.float,device=device)) 
         # Initialise previous abstract location by stacking abstract location prior
         g_inf = [torch.stack([self.g_init[f] for _ in range(self.hyper['batch_size'])]) for f in range(self.hyper['n_f'])]
         # Initialise previous sensory experience with zeros, as there is no data yet for temporal smoothing
-        x_inf = [torch.zeros((self.hyper['batch_size'], self.hyper['n_x_f'][f])) for f in range(self.hyper['n_f'])]        
+        x_inf = [torch.zeros((self.hyper['batch_size'], self.hyper['n_x_f'][f]),device=device) for f in range(self.hyper['n_f'])]        
         # And construct new iteration for that g, x, a, and M
         return Iteration(g=g, x=x, a=a, M=M, x_inf=x_inf, g_inf=g_inf)    
     
@@ -198,7 +199,7 @@ class Model(torch.nn.Module):
                         g_inf[a_i,:] = self.g_init[f]
                     # Reset the sensory experience for this walk
                     for f, x_inf in enumerate(prev_iter[0].x_inf):
-                        x_inf[a_i,:] = torch.zeros(self.hyper['n_x_f'][f])
+                        x_inf[a_i,:] = torch.zeros(self.hyper['n_x_f'][f],device=device)
         # Return the iteration with reset parameters (or simply the empty array if prev_iter was empty)
         return prev_iter
                     
@@ -276,7 +277,7 @@ class Model(torch.nn.Module):
         shiny_envs = [location['shiny'] is not None for location in locations]
         if any(shiny_envs):            
             # Find for which environments the current location has a shiny object
-            shiny_locations = torch.unsqueeze(torch.stack([torch.tensor(location['shiny'], dtype=torch.float) for location in locations if location['shiny'] is not None]), dim=-1)
+            shiny_locations = torch.unsqueeze(torch.stack([torch.tensor(location['shiny'], dtype=torch.float, device=device) for location in locations if location['shiny'] is not None]), dim=-1)
             # Get abstract location for environments with shiny objects and feed to each of the object vector cell modules
             mu_g_shiny = self.f_mu_g_shiny([shiny_locations for _ in range(self.hyper['n_f_g'] if self.hyper['separate_ovc'] else self.hyper['n_f'])])
             sigma_g_shiny = self.f_sigma_g_shiny([shiny_locations for _ in range(self.hyper['n_f_g'] if self.hyper['separate_ovc'] else self.hyper['n_f'])])
@@ -287,7 +288,7 @@ class Model(torch.nn.Module):
                 # Add inferred abstract location from shiny objects to previously obtained position, only for environments with shiny objects
                 mu, sigma = utils.inv_var_weight([mu_g[f][shiny_envs,:], mu_g_shiny[f - module_start]], [sigma_g[f][shiny_envs,:], sigma_g_shiny[f - module_start]])                
                 # In order to update only the environments with shiny objects, without in-place value assignment, construct a mask of shiny environments
-                mask = torch.zeros_like(mu_g[f], dtype=torch.bool)
+                mask = torch.zeros_like(mu_g[f], dtype=torch.bool,device=device)
                 mask[shiny_envs,:] = True
                 # Use mask to update the shiny environment entries in inferred abstract locations
                 mu_g[f] = mu_g[f].masked_scatter(mask,mu) 
@@ -345,10 +346,10 @@ class Model(torch.nn.Module):
         # Transform list of actions into batch of one-hot row vectors. 
         if self.hyper['has_static_action']:
             # If this world has static actions: whenever action 0 (standing still) appears, the action vector should be all zeros. All other actions should have a 1 in the label-1 entry
-            a = torch.zeros((len(a_prev_step),self.hyper['n_actions'])).scatter_(1, torch.clamp(torch.tensor(a_prev_step).unsqueeze(1)-1,min=0), 1.0*(torch.tensor(a_prev_step).unsqueeze(1)>0))
+            a = torch.zeros((len(a_prev_step),self.hyper['n_actions']),device=device).scatter_(1, torch.clamp(torch.tensor(a_prev_step,device=device).unsqueeze(1)-1,min=0), 1.0*(torch.tensor(a_prev_step,device=device).unsqueeze(1)>0))
         else:
             # Without static actions: each action label should become a one-hot vector for that label
-            a = torch.zeros((len(a_prev_step),self.hyper['n_actions'])).scatter_(1, torch.tensor(a_prev_step).unsqueeze(1), 1.0)
+            a = torch.zeros((len(a_prev_step),self.hyper['n_actions']),device=device).scatter_(1, torch.tensor(a_prev_step,device=device).unsqueeze(1), 1.0)
         # Get vector of transition weights by feeding actions into MLP        
         D_a = self.MLP_D_a([a for _ in range(self.hyper['n_f'])])
         # Replace transition weights by non-directional transition weights in environments where transition direction needs to be omitted (can set only if any no_direc)
@@ -453,7 +454,7 @@ class Model(torch.nn.Module):
         # Apply activation function to initial memory index
         h_t = self.f_p(h_t)        
         # Hierarchical retrieval (not in paper) is implemented by early stopping retrieval for low frequencies, using a mask. If not specified: initialise mask as all 1s
-        retrieve_it_mask = [torch.ones(sum(self.hyper['n_p'])) for _ in range(self.hyper['n_p'])] if retrieve_it_mask is None else retrieve_it_mask
+        retrieve_it_mask = [torch.ones(sum(self.hyper['n_p']),device=device) for _ in range(self.hyper['n_p'])] if retrieve_it_mask is None else retrieve_it_mask
         # Iterate attractor dynamics to do pattern completion
         for tau in range(self.hyper['i_attractor']):
             # Apply one iteration of attractor dynamics, but only where there is a 1 in the mask. NB retrieve_it_mask entries have only one row, but are broadcasted to batch_size
@@ -569,8 +570,8 @@ class LSTM(torch.nn.Module):
     def forward(self, data, prev_hidden = None):
         # If previous hidden and cell state are not provided: initialise them randomly
         if prev_hidden is None:
-            hidden_state = torch.randn(self.lstm.num_layers, data.shape[0], self.lstm.hidden_size)
-            cell_state = torch.randn(self.lstm.num_layers, data.shape[0], self.lstm.hidden_size)
+            hidden_state = torch.randn(self.lstm.num_layers, data.shape[0], self.lstm.hidden_size,device=device)
+            cell_state = torch.randn(self.lstm.num_layers, data.shape[0], self.lstm.hidden_size,device=device)
             prev_hidden = (hidden_state, cell_state)
         # Run input through lstm
         lstm_out, lstm_hidden = self.lstm(data, prev_hidden)
@@ -583,7 +584,7 @@ class LSTM(torch.nn.Module):
 
     def prepare_data(self, data_in):
         # Transform list of actions of each step into batch of one-hot row vectors
-        actions = [torch.zeros((len(step[2]),self.n_a)).scatter_(1, torch.tensor(step[2]).unsqueeze(1), 1.0) for step in data_in]
+        actions = [torch.zeros((len(step[2]),self.n_a),device=device).scatter_(1, torch.tensor(step[2],device=device).unsqueeze(1), 1.0) for step in data_in]
         # Concatenate observation and action together along column direction in each step
         vectors = [torch.cat((step[1], action), dim=1) for step, action in zip(data_in, actions)]
         # Then stack all these together along the second dimension, which is sequence length
@@ -609,8 +610,8 @@ class Iteration:
 
     def correct(self):
         # Detach observation and all predictions
-        observation = self.x.detach().numpy()
-        predictions = [tensor.detach().numpy() for tensor in self.x_gen]
+        observation = self.x.detach().cpu().numpy()
+        predictions = [tensor.detach().cpu().numpy() for tensor in self.x_gen]
         # Did the model predict the right observation in this iteration?
         accuracy = [np.argmax(prediction, axis=-1) == np.argmax(observation, axis=-1) for prediction in predictions]
         return accuracy

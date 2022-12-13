@@ -10,6 +10,8 @@ import numpy as np
 import torch
 from scipy.special import comb
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 # This contains one single function that generates a dictionary of parameters, which is provided to the model on initialisation
 def parameters():
     params = {}
@@ -56,7 +58,7 @@ def parameters():
     params['loss_weights_reg_g'] = 0.01 
     params['loss_weights_reg_p'] = 0.02
     # Weights of losses: re-balance contributions of L_p_g, L_p_x, L_x_gen, L_x_g, L_x_p, L_g, L_reg_g, L_reg_p
-    params['loss_weights'] = torch.tensor([params['loss_weights_p'], params['loss_weights_p'], params['loss_weights_x'], params['loss_weights_x'], params['loss_weights_x'], params['loss_weights_g'], params['loss_weights_reg_g'], params['loss_weights_reg_p']], dtype=torch.float)
+    params['loss_weights'] = torch.tensor([params['loss_weights_p'], params['loss_weights_p'], params['loss_weights_x'], params['loss_weights_x'], params['loss_weights_x'], params['loss_weights_g'], params['loss_weights_reg_g'], params['loss_weights_reg_p']], dtype=torch.float,device=device)
     # Number of backprop iters until latent parameter losses (L_p_g, L_p_x, L_g) are all fully weighted
     params['loss_weights_p_g_it'] = 2000
     # Number of backptrop iters until regularisation losses are fully weighted
@@ -146,7 +148,7 @@ def parameters():
         
     # --- Connectivity matrices
     # Set connections when forming Hebbian memory of grounded locations: from low frequency modules to high. High frequency modules come first (different from James!)
-    params['p_update_mask'] = torch.zeros((np.sum(params['n_p']),np.sum(params['n_p'])), dtype=torch.float)
+    params['p_update_mask'] = torch.zeros((np.sum(params['n_p']),np.sum(params['n_p'])), dtype=torch.float, device=device)
     n_p = np.cumsum(np.concatenate(([0],params['n_p'])))    
     # Entry M_ij (row i, col j) is the connection FROM cell i TO cell j. Memory is retrieved by h_t+1 = h_t * M, i.e. h_t+1_j = sum_i {connection from i to j * h_t_i}
     for f_from in range(params['n_f']):
@@ -165,8 +167,8 @@ def parameters():
                 if params['f_initial'][f_from] <= params['f_initial'][f_to]:
                     params['p_update_mask'][n_p[f_from]:n_p[f_from+1],n_p[f_to]:n_p[f_to+1]] = 1.0
     # During memory retrieval, hierarchical memory retrieval of grounded location is implemented by early-stopping low-frequency memory updates, using a mask for updates at every retrieval iteration
-    params['p_retrieve_mask_inf'] = [torch.zeros(sum(params['n_p'])) for _ in range(params['i_attractor'])]
-    params['p_retrieve_mask_gen'] = [torch.zeros(sum(params['n_p'])) for _ in range(params['i_attractor'])]
+    params['p_retrieve_mask_inf'] = [torch.zeros(sum(params['n_p']), device=device) for _ in range(params['i_attractor'])]
+    params['p_retrieve_mask_gen'] = [torch.zeros(sum(params['n_p']), device=device) for _ in range(params['i_attractor'])]
     # Build masks for each retrieval iteration
     for mask, max_iters in zip([params['p_retrieve_mask_inf'], params['p_retrieve_mask_gen']], [params['i_attractor_max_freq_inf'], params['i_attractor_max_freq_gen']]):
         # For each frequency, we get the number of update iterations, and insert ones in the mask for those iterations
@@ -181,9 +183,9 @@ def parameters():
 
     # ---- Static matrices            
     # Matrix for repeating abstract location g to do outer product with sensory information x with elementwise product. Also see (*) note at bottom
-    params['W_repeat'] = [torch.tensor(np.kron(np.eye(params['n_g_subsampled'][f]),np.ones((1,params['n_x_f'][f]))), dtype=torch.float) for f in range(params['n_f'])]
+    params['W_repeat'] = [torch.tensor(np.kron(np.eye(params['n_g_subsampled'][f]),np.ones((1,params['n_x_f'][f]))), dtype=torch.float, device=device) for f in range(params['n_f'])]
     # Matrix for tiling sensory observation x to do outer product with abstract with elementwise product. Also see (*) note at bottom
-    params['W_tile'] = [torch.tensor(np.kron(np.ones((1,params['n_g_subsampled'][f])),np.eye(params['n_x_f'][f])), dtype=torch.float) for f in range(params['n_f'])]    
+    params['W_tile'] = [torch.tensor(np.kron(np.ones((1,params['n_g_subsampled'][f])),np.eye(params['n_x_f'][f])), dtype=torch.float, device=device) for f in range(params['n_f'])]    
     # Table for converting one-hot to two-hot compressed representation 
     params['two_hot_table'] = [[0]*(params['n_x_c']-2) + [1]*2]
     # We need a compressed code for each possible observation, but it's impossible to have more compressed codes than "n_x_c choose 2"
@@ -201,9 +203,9 @@ def parameters():
         # And append new code to array
         params['two_hot_table'].append(code)
     # Convert each code to column vector pytorch tensor
-    params['two_hot_table'] = [torch.tensor(code) for code in params['two_hot_table']]
+    params['two_hot_table'] = [torch.tensor(code, device=device) for code in params['two_hot_table']]
     # Downsampling matrix to go from grid cells to compressed grid cells for indexing memories by simply taking only the first n_g_subsampled grid cells
-    params['g_downsample'] = [torch.cat([torch.eye(dim_out, dtype=torch.float),torch.zeros((dim_in-dim_out,dim_out), dtype=torch.float)]) for dim_in, dim_out in zip(params['n_g'],params['n_g_subsampled'])]
+    params['g_downsample'] = [torch.cat([torch.eye(dim_out, dtype=torch.float, device=device),torch.zeros((dim_in-dim_out,dim_out), dtype=torch.float, device=device)]) for dim_in, dim_out in zip(params['n_g'],params['n_g_subsampled'])]
     return params
 
 # This specifies how parameters are updated at every backpropagation iteration/gradient update
@@ -227,7 +229,7 @@ def parameter_iteration(iteration, params):
     L_reg_g = (1 - min((iteration+1) / params['loss_weights_reg_g_it'], 1)) * params['loss_weights_reg_g']
     L_reg_p = (1 - min((iteration+1) / params['loss_weights_reg_p_it'], 1)) * params['loss_weights_reg_p']
     # And concatenate them in the order expected by the model
-    loss_weights = torch.tensor([L_p_g, L_p_x, L_x_gen, L_x_g, L_x_p, L_g, L_reg_g, L_reg_p])
+    loss_weights = torch.tensor([L_p_g, L_p_x, L_x_gen, L_x_g, L_x_p, L_g, L_reg_g, L_reg_p], device=device)
     # Return all updated parameters
     return eta, lamb, p2g_scale_offset, lr, walk_length_center, loss_weights
 
