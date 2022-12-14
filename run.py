@@ -84,7 +84,7 @@ else:
     tem = model.Model(params)
     tem = tem.to(device)
     # Create list of environments that we will sample from during training to provide TEM with trajectory input
-    envs = ['./envs/env_with_door.json']
+    envs = ['./envs/env_with_wall2.json']
     # Save all environment files that are being used in training in the script directory
     for file in set(envs):
         shutil.copy2(file, os.path.join(envs_path, os.path.basename(file)))    
