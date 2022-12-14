@@ -27,12 +27,12 @@ np.random.seed(0)
 torch.manual_seed(0)
 
 # Either load a trained model and continue training, or start afresh
-load_existing_model = False;
+load_existing_model = True;
 if load_existing_model:
     # Choose which trained model to load
-    date = '2022-12-13' # 2020-07-05 run 0 for successful node agent
-    run = '2'
-    i_start = 4000
+    date = '2022-12-14' # 2020-07-05 run 0 for successful node agent
+    run = '0'
+    i_start = 12000
     
     # Set all paths from existing run 
     run_path, train_path, model_path, save_path, script_path, envs_path = utils.set_directories(date, run)
