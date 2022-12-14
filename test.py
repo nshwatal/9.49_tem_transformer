@@ -23,9 +23,9 @@ np.random.seed(0)
 torch.manual_seed(0)
 
 # Choose which trained model to load
-date = '2022-12-12' # 2020-10-13 run 0 for successful node agent
-run = '11'
-index = '6000'
+date = '2022-12-11' # 2020-10-13 run 0 for successful node agent
+run = '0'
+index = '4000'
 
 # Load the model: use import library to import module from specified path
 model_spec = importlib.util.spec_from_file_location("model", '../Summaries/' + date + '/run' + run + '/script/model.py')
@@ -103,7 +103,7 @@ plt.title('Zero-shot inference: ' + str(np.mean([np.mean(env) for env_i, env in 
 
 # Plot rate maps for all cells
 plot.plot_cells(p[env_to_plot], g[env_to_plot], environments[env_to_plot], n_f_ovc=(params['n_f_ovc'] if 'n_f_ovc' in params else 0), columns = 25)
-
+plt.show()
 # Plot accuracy separated by location
 plt.figure()
 ax = plt.subplot(1,2,1)
