@@ -32,7 +32,7 @@ if load_existing_model:
     # Choose which trained model to load
     date = '2022-12-14' # 2020-07-05 run 0 for successful node agent
     run = '0'
-    i_start = 12000
+    i_start = 14000
     
     # Set all paths from existing run 
     run_path, train_path, model_path, save_path, script_path, envs_path = utils.set_directories(date, run)
