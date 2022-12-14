@@ -27,7 +27,7 @@ np.random.seed(0)
 torch.manual_seed(0)
 
 # Either load a trained model and continue training, or start afresh
-load_existing_model = True;
+load_existing_model = False;
 if load_existing_model:
     # Choose which trained model to load
     date = '2022-12-13' # 2020-07-05 run 0 for successful node agent
